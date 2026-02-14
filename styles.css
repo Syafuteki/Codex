@@ -1,0 +1,94 @@
+:root {
+  color-scheme: dark;
+  --bg: #11131a;
+  --panel: #1b2230;
+  --text: #e8edf7;
+  --accent: #87b0ff;
+  --danger: #ff6e90;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 20% 20%, #1f2d46, var(--bg));
+  color: var(--text);
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+.layout {
+  width: min(92vw, 920px);
+  text-align: center;
+}
+
+h1 {
+  margin-bottom: 0.4rem;
+}
+
+.hud {
+  margin: 0 auto 0.8rem;
+  width: min(100%, 800px);
+  display: flex;
+  justify-content: space-between;
+  background: color-mix(in srgb, var(--panel), transparent 16%);
+  border: 1px solid #3b4a67;
+  border-radius: 10px;
+  padding: 0.55rem 0.9rem;
+}
+
+.game-wrap {
+  position: relative;
+  width: fit-content;
+  margin: 0 auto;
+}
+
+canvas {
+  width: min(92vw, 800px);
+  height: auto;
+  background: #090c12;
+  border: 2px solid #48597b;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 40%);
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  background: rgb(0 0 0 / 58%);
+  border-radius: 10px;
+  color: var(--danger);
+  font-size: 1.6rem;
+  font-weight: 700;
+  gap: 0.25rem;
+}
+
+.overlay p {
+  margin: 0;
+}
+
+.overlay p:last-child {
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.hidden {
+  display: none;
+}
+
+.help {
+  color: var(--accent);
+}
+
+@media (max-width: 600px) {
+  .hud {
+    font-size: 0.95rem;
+  }
+}
