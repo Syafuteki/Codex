@@ -3,25 +3,42 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>弾よけゲーム</title>
+    <title>テトリス</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <main class="layout">
-      <h1>弾よけゲーム</h1>
-      <div class="hud" aria-live="polite">
-        <span>Score: <strong id="score">0</strong></span>
-        <span>HP: <strong id="hp">3</strong></span>
-      </div>
-      <div class="game-wrap">
-        <canvas id="gameCanvas" width="800" height="600"></canvas>
-        <div id="gameOver" class="overlay hidden">
-          <p>ゲームオーバー</p>
-          <p>Rキーでリスタート</p>
+      <section class="board-wrap">
+        <h1>テトリス</h1>
+        <div class="game-area">
+          <canvas id="gameCanvas" width="300" height="600" aria-label="テトリス盤面"></canvas>
+          <div id="gameOverlay" class="overlay hidden">
+            <p id="overlayTitle">GAME OVER</p>
+            <p>Rキーでリスタート</p>
+          </div>
         </div>
-      </div>
-      <p class="help">操作: 矢印キー / WASD</p>
+      </section>
+
+      <aside class="panel" aria-live="polite">
+        <h2>ステータス</h2>
+        <p>Score: <strong id="score">0</strong></p>
+        <p>Lines: <strong id="lines">0</strong></p>
+        <p>Level: <strong id="level">1</strong></p>
+        <div class="help">
+          <h3>操作</h3>
+          <ul>
+            <li>← → : 移動</li>
+            <li>↓ : ソフトドロップ</li>
+            <li>↑ / X : 回転</li>
+            <li>Z : 逆回転</li>
+            <li>Space : ハードドロップ</li>
+            <li>P : 一時停止</li>
+            <li>R : リスタート</li>
+          </ul>
+        </div>
+      </aside>
     </main>
+
     <script src="src/main.js"></script>
   </body>
 </html>
