@@ -1,223 +1,377 @@
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
+
 const scoreEl = document.getElementById("score");
-const hpEl = document.getElementById("hp");
-const gameOverEl = document.getElementById("gameOver");
+const linesEl = document.getElementById("lines");
+const levelEl = document.getElementById("level");
+const overlayEl = document.getElementById("gameOverlay");
+const overlayTitleEl = document.getElementById("overlayTitle");
 
-const GAME_CONFIG = {
-  playerRadius: 14,
-  playerSpeed: 320,
-  startHp: 3,
-  initialSpawnInterval: 950,
-  minSpawnInterval: 260,
-  spawnAcceleration: 30,
-  baseBulletSpeed: 170,
-  bulletSpeedGrowth: 5,
-  playerInvulnerableMs: 600,
+const COLS = 10;
+const ROWS = 20;
+const BLOCK = canvas.width / COLS;
+
+const PIECES = {
+  I: [[1, 1, 1, 1]],
+  O: [
+    [1, 1],
+    [1, 1],
+  ],
+  T: [
+    [0, 1, 0],
+    [1, 1, 1],
+  ],
+  S: [
+    [0, 1, 1],
+    [1, 1, 0],
+  ],
+  Z: [
+    [1, 1, 0],
+    [0, 1, 1],
+  ],
+  J: [
+    [1, 0, 0],
+    [1, 1, 1],
+  ],
+  L: [
+    [0, 0, 1],
+    [1, 1, 1],
+  ],
 };
 
-const input = {
-  up: false,
-  down: false,
-  left: false,
-  right: false,
+const COLORS = {
+  I: "#40e0ff",
+  O: "#ffd94f",
+  T: "#bf7cff",
+  S: "#54e38e",
+  Z: "#ff6474",
+  J: "#6592ff",
+  L: "#ffa85a",
 };
 
-let gameState;
-let lastFrameTime = 0;
-let lastSpawnAt = 0;
-let nextSpawnEvery = GAME_CONFIG.initialSpawnInterval;
+const LINES_PER_LEVEL = 10;
+const SCORE_TABLE = [0, 100, 300, 500, 800];
+
+const state = {
+  board: createBoard(),
+  piece: null,
+  score: 0,
+  lines: 0,
+  level: 1,
+  gameOver: false,
+  paused: false,
+  lastTime: 0,
+  dropElapsedMs: 0,
+};
+
+function createBoard() {
+  return Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+}
+
+function cloneMatrix(matrix) {
+  return matrix.map((row) => [...row]);
+}
+
+function randomPiece() {
+  const keys = Object.keys(PIECES);
+  const type = keys[Math.floor(Math.random() * keys.length)];
+  const shape = cloneMatrix(PIECES[type]);
+  const x = Math.floor((COLS - shape[0].length) / 2);
+  return { type, shape, x, y: 0 };
+}
 
 function resetGame() {
-  gameState = {
-    player: {
-      x: canvas.width / 2,
-      y: canvas.height / 2,
-      r: GAME_CONFIG.playerRadius,
-      speed: GAME_CONFIG.playerSpeed,
-      invulnerableUntil: 0,
-    },
-    bullets: [],
-    hp: GAME_CONFIG.startHp,
-    score: 0,
-    elapsed: 0,
-    gameOver: false,
-  };
+  state.board = createBoard();
+  state.piece = randomPiece();
+  state.score = 0;
+  state.lines = 0;
+  state.level = 1;
+  state.gameOver = false;
+  state.paused = false;
+  state.lastTime = 0;
+  state.dropElapsedMs = 0;
+  syncHud();
+  hideOverlay();
 
-  scoreEl.textContent = "0";
-  hpEl.textContent = String(gameState.hp);
-  gameOverEl.classList.add("hidden");
-  nextSpawnEvery = GAME_CONFIG.initialSpawnInterval;
-  lastSpawnAt = performance.now();
-  lastFrameTime = performance.now();
+  if (hasCollision(state.piece)) {
+    triggerGameOver();
+  }
 }
 
-function keyStateFromEvent(event, isDown) {
-  switch (event.key.toLowerCase()) {
-    case "arrowup":
-    case "w":
-      input.up = isDown;
-      break;
-    case "arrowdown":
-    case "s":
-      input.down = isDown;
-      break;
-    case "arrowleft":
-    case "a":
-      input.left = isDown;
-      break;
-    case "arrowright":
-    case "d":
-      input.right = isDown;
-      break;
-    case "r":
-      if (isDown && gameState?.gameOver) {
-        resetGame();
+function getDropIntervalMs() {
+  return Math.max(95, 900 - (state.level - 1) * 75);
+}
+
+function rotateMatrixClockwise(matrix) {
+  return matrix[0].map((_, col) => matrix.map((row) => row[col]).reverse());
+}
+
+function hasCollision(piece) {
+  for (let y = 0; y < piece.shape.length; y += 1) {
+    for (let x = 0; x < piece.shape[y].length; x += 1) {
+      if (!piece.shape[y][x]) {
+        continue;
       }
-      break;
-    default:
-      break;
-  }
-}
 
-window.addEventListener("keydown", (event) => keyStateFromEvent(event, true));
-window.addEventListener("keyup", (event) => keyStateFromEvent(event, false));
+      const boardX = piece.x + x;
+      const boardY = piece.y + y;
 
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
-function updatePlayer(deltaSec) {
-  const dx = Number(input.right) - Number(input.left);
-  const dy = Number(input.down) - Number(input.up);
-  if (dx === 0 && dy === 0) {
-    return;
-  }
-
-  const mag = Math.hypot(dx, dy) || 1;
-  const step = gameState.player.speed * deltaSec;
-  gameState.player.x += (dx / mag) * step;
-  gameState.player.y += (dy / mag) * step;
-
-  const r = gameState.player.r;
-  gameState.player.x = clamp(gameState.player.x, r, canvas.width - r);
-  gameState.player.y = clamp(gameState.player.y, r, canvas.height - r);
-}
-
-function randomEdgeSpawn() {
-  const edge = Math.floor(Math.random() * 4);
-  switch (edge) {
-    case 0:
-      return { x: Math.random() * canvas.width, y: -20 };
-    case 1:
-      return { x: canvas.width + 20, y: Math.random() * canvas.height };
-    case 2:
-      return { x: Math.random() * canvas.width, y: canvas.height + 20 };
-    default:
-      return { x: -20, y: Math.random() * canvas.height };
-  }
-}
-
-function spawnBullet() {
-  const spawn = randomEdgeSpawn();
-  const toPlayerX = gameState.player.x - spawn.x;
-  const toPlayerY = gameState.player.y - spawn.y;
-  const heading = Math.hypot(toPlayerX, toPlayerY) || 1;
-  const speed = GAME_CONFIG.baseBulletSpeed + gameState.elapsed * GAME_CONFIG.bulletSpeedGrowth;
-
-  gameState.bullets.push({
-    x: spawn.x,
-    y: spawn.y,
-    vx: (toPlayerX / heading) * speed,
-    vy: (toPlayerY / heading) * speed,
-    r: 7,
-  });
-}
-
-function updateBullets(deltaSec) {
-  for (const bullet of gameState.bullets) {
-    bullet.x += bullet.vx * deltaSec;
-    bullet.y += bullet.vy * deltaSec;
-  }
-
-  gameState.bullets = gameState.bullets.filter(
-    (b) => b.x > -60 && b.x < canvas.width + 60 && b.y > -60 && b.y < canvas.height + 60,
-  );
-}
-
-function applyCollisions(now) {
-  if (now < gameState.player.invulnerableUntil) {
-    return;
-  }
-
-  const p = gameState.player;
-  for (const bullet of gameState.bullets) {
-    const dx = p.x - bullet.x;
-    const dy = p.y - bullet.y;
-    if (dx * dx + dy * dy < (p.r + bullet.r) ** 2) {
-      gameState.hp -= 1;
-      hpEl.textContent = String(gameState.hp);
-      gameState.player.invulnerableUntil = now + GAME_CONFIG.playerInvulnerableMs;
-      if (gameState.hp <= 0) {
-        gameState.gameOver = true;
-        gameOverEl.classList.remove("hidden");
+      if (boardX < 0 || boardX >= COLS || boardY >= ROWS) {
+        return true;
       }
-      break;
+
+      if (boardY >= 0 && state.board[boardY][boardX]) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function movePiece(dx, dy) {
+  const candidate = { ...state.piece, x: state.piece.x + dx, y: state.piece.y + dy };
+  if (!hasCollision(candidate)) {
+    state.piece = candidate;
+    return true;
+  }
+  return false;
+}
+
+function rotatePiece(dir = 1) {
+  let rotated = cloneMatrix(state.piece.shape);
+  if (dir < 0) {
+    rotated = rotateMatrixClockwise(rotateMatrixClockwise(rotateMatrixClockwise(rotated)));
+  } else {
+    rotated = rotateMatrixClockwise(rotated);
+  }
+
+  const candidate = { ...state.piece, shape: rotated };
+  const wallKicks = [0, -1, 1, -2, 2];
+  for (const kick of wallKicks) {
+    const shifted = { ...candidate, x: candidate.x + kick };
+    if (!hasCollision(shifted)) {
+      state.piece = shifted;
+      return;
     }
   }
 }
 
-function maybeSpawnBullet(now) {
-  if (now - lastSpawnAt < nextSpawnEvery) {
-    return;
+function lockPiece() {
+  for (let y = 0; y < state.piece.shape.length; y += 1) {
+    for (let x = 0; x < state.piece.shape[y].length; x += 1) {
+      if (!state.piece.shape[y][x]) {
+        continue;
+      }
+      const boardY = state.piece.y + y;
+      const boardX = state.piece.x + x;
+      if (boardY >= 0) {
+        state.board[boardY][boardX] = state.piece.type;
+      }
+    }
   }
-  spawnBullet();
-  lastSpawnAt = now;
-  nextSpawnEvery = Math.max(
-    GAME_CONFIG.minSpawnInterval,
-    GAME_CONFIG.initialSpawnInterval - gameState.elapsed * GAME_CONFIG.spawnAcceleration,
-  );
+
+  const cleared = clearLines();
+  if (cleared > 0) {
+    state.score += SCORE_TABLE[cleared] * state.level;
+    state.lines += cleared;
+    state.level = Math.floor(state.lines / LINES_PER_LEVEL) + 1;
+    syncHud();
+  }
+
+  state.piece = randomPiece();
+  if (hasCollision(state.piece)) {
+    triggerGameOver();
+  }
 }
 
-function draw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+function clearLines() {
+  const nextBoard = state.board.filter((row) => row.some((cell) => cell === null));
+  const linesCleared = ROWS - nextBoard.length;
 
-  const pulse = performance.now() < gameState.player.invulnerableUntil;
-  ctx.fillStyle = pulse ? "#ffd166" : "#5ac8ff";
-  ctx.beginPath();
-  ctx.arc(gameState.player.x, gameState.player.y, gameState.player.r, 0, Math.PI * 2);
-  ctx.fill();
+  while (nextBoard.length < ROWS) {
+    nextBoard.unshift(Array(COLS).fill(null));
+  }
 
-  ctx.fillStyle = "#ff5f87";
-  for (const bullet of gameState.bullets) {
-    ctx.beginPath();
-    ctx.arc(bullet.x, bullet.y, bullet.r, 0, Math.PI * 2);
-    ctx.fill();
+  state.board = nextBoard;
+  return linesCleared;
+}
+
+function hardDrop() {
+  while (movePiece(0, 1)) {
+    state.score += 2;
+  }
+  lockPiece();
+  syncHud();
+}
+
+function step() {
+  if (!movePiece(0, 1)) {
+    lockPiece();
   }
 }
 
-function gameLoop(now) {
-  if (!lastFrameTime) {
-    lastFrameTime = now;
+function drawCell(x, y, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(x * BLOCK, y * BLOCK, BLOCK, BLOCK);
+  ctx.strokeStyle = "#0a1022";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x * BLOCK + 0.5, y * BLOCK + 0.5, BLOCK - 1, BLOCK - 1);
+}
+
+function drawBoard() {
+  ctx.fillStyle = "#030712";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  for (let y = 0; y < ROWS; y += 1) {
+    for (let x = 0; x < COLS; x += 1) {
+      const cell = state.board[y][x];
+      if (cell) {
+        drawCell(x, y, COLORS[cell]);
+      }
+    }
+  }
+}
+
+function drawGhostPiece() {
+  let ghost = { ...state.piece, shape: cloneMatrix(state.piece.shape) };
+  while (!hasCollision({ ...ghost, y: ghost.y + 1 })) {
+    ghost.y += 1;
   }
 
-  const deltaSec = Math.min(0.033, (now - lastFrameTime) / 1000);
-  lastFrameTime = now;
+  for (let y = 0; y < ghost.shape.length; y += 1) {
+    for (let x = 0; x < ghost.shape[y].length; x += 1) {
+      if (!ghost.shape[y][x]) {
+        continue;
+      }
+      const gx = ghost.x + x;
+      const gy = ghost.y + y;
+      if (gy >= 0) {
+        ctx.fillStyle = "rgb(200 220 255 / 18%)";
+        ctx.fillRect(gx * BLOCK, gy * BLOCK, BLOCK, BLOCK);
+      }
+    }
+  }
+}
 
-  if (!gameState.gameOver) {
-    gameState.elapsed += deltaSec;
-    gameState.score += deltaSec * 10;
-    scoreEl.textContent = String(Math.floor(gameState.score));
+function drawCurrentPiece() {
+  for (let y = 0; y < state.piece.shape.length; y += 1) {
+    for (let x = 0; x < state.piece.shape[y].length; x += 1) {
+      if (!state.piece.shape[y][x]) {
+        continue;
+      }
 
-    updatePlayer(deltaSec);
-    maybeSpawnBullet(now);
-    updateBullets(deltaSec);
-    applyCollisions(now);
+      const px = state.piece.x + x;
+      const py = state.piece.y + y;
+      if (py >= 0) {
+        drawCell(px, py, COLORS[state.piece.type]);
+      }
+    }
+  }
+}
+
+function render() {
+  drawBoard();
+  drawGhostPiece();
+  drawCurrentPiece();
+}
+
+function syncHud() {
+  scoreEl.textContent = String(state.score);
+  linesEl.textContent = String(state.lines);
+  levelEl.textContent = String(state.level);
+}
+
+function showOverlay(title) {
+  overlayTitleEl.textContent = title;
+  overlayEl.classList.remove("hidden");
+}
+
+function hideOverlay() {
+  overlayEl.classList.add("hidden");
+}
+
+function triggerGameOver() {
+  state.gameOver = true;
+  showOverlay("GAME OVER");
+}
+
+function gameLoop(time) {
+  if (!state.lastTime) {
+    state.lastTime = time;
   }
 
-  draw();
+  const dt = time - state.lastTime;
+  state.lastTime = time;
+
+  if (!state.gameOver && !state.paused) {
+    state.dropElapsedMs += dt;
+    if (state.dropElapsedMs >= getDropIntervalMs()) {
+      step();
+      state.dropElapsedMs = 0;
+      syncHud();
+    }
+  }
+
+  render();
   requestAnimationFrame(gameLoop);
 }
+
+window.addEventListener("keydown", (event) => {
+  const key = event.key.toLowerCase();
+
+  if (key === "r") {
+    resetGame();
+    return;
+  }
+
+  if (key === "p" && !state.gameOver) {
+    state.paused = !state.paused;
+    if (state.paused) {
+      showOverlay("PAUSED");
+    } else {
+      hideOverlay();
+    }
+    return;
+  }
+
+  if (state.gameOver || state.paused) {
+    return;
+  }
+
+  if (["arrowleft", "arrowright", "arrowdown", "arrowup", " ", "z", "x"].includes(key)) {
+    event.preventDefault();
+  }
+
+  switch (key) {
+    case "arrowleft":
+      movePiece(-1, 0);
+      break;
+    case "arrowright":
+      movePiece(1, 0);
+      break;
+    case "arrowdown":
+      if (movePiece(0, 1)) {
+        state.score += 1;
+        syncHud();
+      } else {
+        lockPiece();
+      }
+      break;
+    case "arrowup":
+    case "x":
+      rotatePiece(1);
+      break;
+    case "z":
+      rotatePiece(-1);
+      break;
+    case " ":
+      hardDrop();
+      break;
+    default:
+      break;
+  }
+});
 
 resetGame();
 requestAnimationFrame(gameLoop);
